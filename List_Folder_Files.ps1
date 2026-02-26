@@ -50,23 +50,71 @@ function Get-ListingType {
     }
 }
 
-# Create and configure the folder browser dialog
-$folderBrowser = New-Object System.Windows.Forms.FolderBrowserDialog
-$folderBrowser.Description = "Select a folder to list its files"
-$folderBrowser.ShowNewFolderButton = $false
+# Keep console window open until user presses a key
+function Wait-ForAnyKey {
+    Write-Host ""
+    try {
+        # Use host key-reading when available (console hosts and VS Code terminal).
+        Write-Host "Press any key to exit..."
+        [void]$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    }
+    catch {
+        # Fallback for hosts like Windows PowerShell ISE.
+        [void](Read-Host "Press Enter to exit")
+    }
+}
 
-# Show the dialog
-$dialogResult = $folderBrowser.ShowDialog()
+# Prompt user to select source folder
+function Select-SourceFolder {
+    $folderBrowser = New-Object System.Windows.Forms.FolderBrowserDialog
+    $folderBrowser.Description = "Select a folder to list its files"
+    $folderBrowser.ShowNewFolderButton = $false
 
-# Handle cancel
-if ($dialogResult -ne [System.Windows.Forms.DialogResult]::OK) {
+    $dialogResult = $folderBrowser.ShowDialog()
+    if ($dialogResult -eq [System.Windows.Forms.DialogResult]::OK) {
+        return $folderBrowser.SelectedPath
+    }
+
+    return $null
+}
+
+# Prompt user to select output folder
+function Select-OutputFolder {
+    param([string]$DefaultPath)
+
+    $folderBrowser = New-Object System.Windows.Forms.FolderBrowserDialog
+    $folderBrowser.Description = "Select output folder for exported file(s)"
+    $folderBrowser.ShowNewFolderButton = $false
+    if (-not [string]::IsNullOrWhiteSpace($DefaultPath)) {
+        $folderBrowser.SelectedPath = $DefaultPath
+    }
+
+    $dialogResult = $folderBrowser.ShowDialog()
+    if ($dialogResult -eq [System.Windows.Forms.DialogResult]::OK) {
+        return $folderBrowser.SelectedPath
+    }
+
+    return $null
+}
+
+$sourceFolder = Select-SourceFolder
+if ($null -eq $sourceFolder) {
     Write-Host "No folder selected. Exiting."
+    Wait-ForAnyKey
     return
 }
 
-# Get selected folder
-$sourceFolder = $folderBrowser.SelectedPath
 Write-Host "Selected folder: $sourceFolder"
+Write-Host ""
+
+$outputFolder = Select-OutputFolder -DefaultPath $sourceFolder
+if ($null -eq $outputFolder) {
+    $outputFolder = $sourceFolder
+    Write-Host "No output folder selected. Using source folder for output."
+}
+else {
+    Write-Host "Output folder: $outputFolder"
+}
 Write-Host ""
 
 # Ask user for options
@@ -85,6 +133,7 @@ if ($listingType -eq 'list') {
 
     if ($items.Count -eq 0) {
         Write-Host "No files or folders found."
+        Wait-ForAnyKey
         return
     }
 
@@ -98,7 +147,7 @@ if ($listingType -eq 'list') {
         $outputLines += $line
     }
 
-    $outputFile = Join-Path $sourceFolder "FileFolderList.txt"
+    $outputFile = Join-Path $outputFolder "FileFolderList.txt"
     $outputLines | Out-File -FilePath $outputFile -Encoding UTF8
 
     Write-Host "`nList exported to $outputFile"
@@ -113,8 +162,10 @@ else {
     Write-Host "Tree view of ${sourceFolder}:`n"
     $treeOutput = Show-Tree -Path $sourceFolder
     $treeOutput | ForEach-Object { Write-Host $_ }
-    $outputFile = Join-Path $sourceFolder "TreeView.txt"
+    $outputFile = Join-Path $outputFolder "TreeView.txt"
     $treeOutput | Out-File -FilePath $outputFile -Encoding UTF8
 
     Write-Host "`nTree view exported to $outputFile"
 }
+
+Wait-ForAnyKey
